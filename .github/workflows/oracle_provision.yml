@@ -35,6 +35,9 @@ jobs:
           region=${{ secrets.OCI_CLI_REGION }}
           EOF
 
+          # Rechte einschränken, um Warnungen zu verhindern
+          chmod 600 ~/.oci/config
+
       - name: Create SSH Key File
         run: |
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > ssh_key.pub
@@ -42,7 +45,7 @@ jobs:
       - name: Attempt Instance Creation
         id: create_vm
         run: |
-          # Führe OCI-Befehl aus und fange Fehler ab
+          # OCI Launch-Befehl ausführen und Fehler abfangen
           oci compute instance launch \
             --availability-domain "${{ secrets.OCI_AD_NAME }}" \
             --compartment-id "${{ secrets.OCI_COMPARTMENT_ID }}" \
@@ -54,29 +57,30 @@ jobs:
             --ssh-authorized-keys-file ssh_key.pub \
             --assign-public-ip true > oci_output.json 2>&1 || true
 
-          # Schreibe die Antwort für einfache Lesbarkeit direkt in die GitHub-Zusammenfassung
+          # Antwort für die GitHub Step Summary aufbereiten
           echo "### OCI Antwort:" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
           cat oci_output.json >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-          if grep -q "OutOfCapacity" oci_output.json; then
+          # Prüfen, ob es ein Kapazitätsproblem ist oder geklappt hat
+          if grep -qi "capacity" oci_output.json; then
             echo "STATUS=OutOfCapacity" >> $GITHUB_OUTPUT
-            echo "Keine Kapazität verfügbar. Nächster Versuch folgt automatisch."
+            echo "Keine Kapazität frei. Nächster Versuch folgt automatisch."
             exit 0
           elif grep -q '"lifecycle-state": "PROVISIONING"' oci_output.json; then
             echo "STATUS=Success" >> $GITHUB_OUTPUT
             echo "🎉 INSTANZ ERFOLGREICH ERSTELLT!" >> $GITHUB_STEP_SUMMARY
             exit 0
           else
-            echo "Anderer Fehler aufgetreten!"
+            echo "Ein unerwarteter Fehler ist aufgetreten!"
             exit 1
           fi
 
       - name: Disable Workflow on Success
         if: steps.create_vm.outputs.STATUS == 'Success'
         run: |
-          echo "Instanz wurde erstellt. Schalte Workflow ab..."
+          echo "Instanz wurde erfolgreich angelegt. Schalte Workflow ab..."
           gh workflow disable oracle_provision.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
