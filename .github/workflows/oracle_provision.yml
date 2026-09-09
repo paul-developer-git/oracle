@@ -1,0 +1,57 @@
+name: Oracle Ampere A1 Provisioner
+
+on:
+  schedule:
+    # Läuft alle 15 Minuten (GitHub lässt Cron-Jobs oft leicht zeitversetzt starten)
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Ermöglicht auch manuelle Starts per Button
+
+jobs:
+  launch-instance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup OCI CLI
+        uses: oracle-actions/setup-oci-cli@v1
+        with:
+          user_ocid: ${{ secrets.OCI_CLI_USER }}
+          tenancy_ocid: ${{ secrets.OCI_CLI_TENANCY }}
+          fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          private_key: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          region: ${{ secrets.OCI_CLI_REGION }}
+
+      - name: Create SSH Key File
+        run: |
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ssh_key.pub
+
+      - name: Attempt Instance Creation
+        id: create_vm
+        continue-on-error: true
+        run: |
+          oci compute instance launch \
+            --availability-domain "${{ secrets.OCI_AD_NAME }}" \
+            --compartment-id "${{ secrets.OCI_COMPARTMENT_ID }}" \
+            --shape "VM.Standard.A1.Flex" \
+            --shape-config '{"ocpus": 2, "memoryInGBs": 12}' \
+            --image-id "${{ secrets.OCI_IMAGE_ID }}" \
+            --subnet-id "${{ secrets.OCI_SUBNET_ID }}" \
+            --display-name "Free-Ampere-A1" \
+            --ssh-authorized-keys-file ssh_key.pub \
+            --assign-public-ip true > oci_output.json 2>&1
+
+          cat oci_output.json
+
+          if grep -q "OutOfCapacity" oci_output.json; then
+            echo "STATUS=OutOfCapacity" >> $GITHUB_OUTPUT
+            exit 1
+          elif grep -q '"lifecycle-state": "PROVISIONING"' oci_output.json; then
+            echo "STATUS=Success" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+      - name: Disable Workflow on Success
+        if: steps.create_vm.outputs.STATUS == 'Success'
+        run: |
+          echo "Instanz erfolgreich erstellt! Deaktiviere Workflow..."
+          gh workflow disable oracle_provision.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
