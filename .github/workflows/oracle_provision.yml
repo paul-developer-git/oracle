@@ -10,19 +10,43 @@ jobs:
   launch-instance:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup OCI CLI
-        uses: oracle-actions/setup-oci-cli@v1
+      # 1. Python auf dem Runner installieren
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          user_ocid: ${{ secrets.OCI_CLI_USER }}
-          tenancy_ocid: ${{ secrets.OCI_CLI_TENANCY }}
-          fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
-          private_key: ${{ secrets.OCI_CLI_KEY_CONTENT }}
-          region: ${{ secrets.OCI_CLI_REGION }}
+          python-version: '3.x'
 
+      # 2. OCI CLI direkt per pip installieren
+      - name: Install OCI CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install oci-cli
+
+      # 3. OCI Konfigurationsordner und Dateien anlegen
+      - name: Configure OCI CLI
+        run: |
+          mkdir -p ~/.oci
+          
+          # Private Key speichern
+          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+
+          # Config-Datei schreiben
+          cat <<EOF > ~/.oci/config
+          [DEFAULT]
+          user=${{ secrets.OCI_CLI_USER }}
+          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
+          key_file=~/.oci/oci_api_key.pem
+          tenancy=${{ secrets.OCI_CLI_TENANCY }}
+          region=${{ secrets.OCI_CLI_REGION }}
+          EOF
+
+      # 4. SSH Public Key File erstellen
       - name: Create SSH Key File
         run: |
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > ssh_key.pub
 
+      # 5. Erstellungsversuch ausführen
       - name: Attempt Instance Creation
         id: create_vm
         continue-on-error: true
@@ -48,6 +72,7 @@ jobs:
             exit 0
           fi
 
+      # 6. Bei Erfolg den Workflow automatisch deaktivieren
       - name: Disable Workflow on Success
         if: steps.create_vm.outputs.STATUS == 'Success'
         run: |
