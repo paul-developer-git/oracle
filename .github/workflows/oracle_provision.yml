@@ -50,7 +50,7 @@ jobs:
             --availability-domain "${{ secrets.OCI_AD_NAME }}" \
             --compartment-id "${{ secrets.OCI_COMPARTMENT_ID }}" \
             --shape "VM.Standard.A1.Flex" \
-            --shape-config '{"ocpus": 2, "memoryInGBs": 12}' \
+            --shape-config '{"ocpus": 1, "memoryInGBs": 6}' \
             --image-id "${{ secrets.OCI_IMAGE_ID }}" \
             --subnet-id "${{ secrets.OCI_SUBNET_ID }}" \
             --display-name "Free-Ampere-A1" \
